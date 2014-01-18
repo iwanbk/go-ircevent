@@ -112,15 +112,24 @@ func (irc *Connection) pingLoop() {
 	}
 }
 
-func (irc *Connection) Loop() {
+func (irc *Connection) Loop(cmdChan chan string) {
 	for !irc.stopped {
-		err := <-irc.Error
-		if irc.stopped {
-			break
+		select {
+		case err := <-irc.Error:
+			if irc.stopped {
+				break
+			}
+			irc.log.Printf("Error: %s\n", err)
+			irc.Disconnect()
+			irc.Connect(irc.server)
+		case cmd := <-cmdChan:
+			if cmd == "disconnect" {
+				log.Println("[irc-event]got disconnect command")
+				irc.stopped = true
+				irc.Disconnect()
+				break
+			}
 		}
-		irc.log.Printf("Error: %s\n", err)
-		irc.Disconnect()
-		irc.Connect(irc.server)
 	}
 }
 
@@ -178,11 +187,12 @@ func (irc *Connection) Disconnect() {
 	close(irc.pread)
 	irc.endping <- true
 
+	irc.socket.Close()
+	irc.socket = nil
+
 	<-irc.readerExit
 	<-irc.writerExit
 	<-irc.pingerExit
-	irc.socket.Close()
-	irc.socket = nil
 }
 
 func (irc *Connection) Reconnect() error {
